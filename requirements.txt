@@ -1,3 +1,10 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 望着天空的眼睛 <a15234181830@163.com>
+#
+# This file is distributed under the GNU General Public License v3.0
+# or (at your option) any later version.
+# See <https://www.gnu.org/licenses/> for details.
+
 # Exported from conda env: loong
 # Install with: python -m pip install -r requirements.txt
 colorama==0.4.6

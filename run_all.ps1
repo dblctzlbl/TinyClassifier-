@@ -1,4 +1,20 @@
-# One-click pipeline: train -> evaluate -> export NCNN
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 望着天空的眼睛 <a15234181830@163.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+# One-click pipeline: train -> export NCNN
 # Usage: run at project root
 #   powershell -ExecutionPolicy Bypass -File .\run_all.ps1
 
@@ -12,16 +28,16 @@ $PythonExe = ""
 
 # Dataset root (ImageFolder structure)
 # e.g. "dataset" or "D:/datasets/my_cls"
-$DataRoot = "dataset01"
+$DataRoot = "dataset"
 
 # Output directory
-$OutDir = "artifacts01"
+$OutDir = "artifacts"
 
 # Train params
 $Train = @{
     ImgSize = 96
     BatchSize = 64
-    Epochs = 35
+    Epochs = 10
     Lr = 1e-3
     WeightDecay = 2e-4
     NumWorkers = 4
@@ -30,15 +46,9 @@ $Train = @{
     Patience = 8
 }
 
-# Eval params
-$Eval = @{
-    BatchSize = 128
-    NumWorkers = 2
-    Seed = 42
-}
-
 # Whether to export NCNN (calls convert_to_ncnn.ps1)
 $RunNcnnExport = $true
+
 # ====================== End User Config (do not edit below) =================
 
 function Invoke-Step {
@@ -87,10 +97,7 @@ if (-not (Test-Path -LiteralPath $DataRoot)) {
 if (-not (Test-Path -LiteralPath "./train_tiny_classifier.py")) {
     throw "Missing file: train_tiny_classifier.py"
 }
-if (-not (Test-Path -LiteralPath "./evaluate_local_accuracy.py")) {
-    throw "Missing file: evaluate_local_accuracy.py"
-}
-if (-not (Test-Path -LiteralPath "./convert_to_ncnn.ps1")) {
+if ($RunNcnnExport -and -not (Test-Path -LiteralPath "./convert_to_ncnn.ps1")) {
     throw "Missing file: convert_to_ncnn.ps1"
 }
 
@@ -124,19 +131,6 @@ if (-not (Test-Path -LiteralPath $CheckpointPath)) {
     throw "Checkpoint not found after training: $CheckpointPath"
 }
 
-Invoke-Step -Name "Evaluate Accuracy" -Action {
-    $argsEval = @(
-        "./evaluate_local_accuracy.py",
-        "--data-root", $DataRoot,
-        "--checkpoint", $CheckpointPath,
-        "--img-size", "$($Train.ImgSize)",
-        "--batch-size", "$($Eval.BatchSize)",
-        "--num-workers", "$($Eval.NumWorkers)",
-        "--seed", "$($Eval.Seed)"
-    )
-    & $PythonExe @argsEval
-}
-
 if ($RunNcnnExport) {
     Invoke-Step -Name "Export NCNN" -Action {
         $onnxPath = Join-Path $OutDir "tiny_classifier_96.onnx"
@@ -159,3 +153,7 @@ Write-Host ('- Model: {0}' -f (Join-Path $OutDir 'best_model.pt'))
 Write-Host ('- Label order: {0}' -f (Join-Path $OutDir 'labels.txt'))
 Write-Host ('- Metrics: {0}' -f (Join-Path $OutDir 'metrics.json'))
 Write-Host ('- ONNX: {0}' -f (Join-Path $OutDir 'tiny_classifier_96.onnx'))
+if ($RunNcnnExport) {
+    Write-Host ('- NCNN Param: {0}' -f (Join-Path $OutDir 'tiny_classifier_96.ncnn.param'))
+    Write-Host ('- NCNN Bin: {0}' -f (Join-Path $OutDir 'tiny_classifier_96.ncnn.bin'))
+}
