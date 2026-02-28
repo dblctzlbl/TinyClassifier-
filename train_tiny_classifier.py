@@ -222,6 +222,7 @@ def main():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--width-mult", type=float, default=0.6)
     parser.add_argument("--patience", type=int, default=8)
+    parser.add_argument("--target-acc", type=float, default=0.95)
     parser.add_argument("--out-dir", type=str, default="artifacts")
     args = parser.parse_args()
 
@@ -263,6 +264,7 @@ def main():
     best_epoch = -1
     best_path = out_dir / "best_model.pt"
     bad_epochs = 0
+    reached_target_acc = False
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_acc = run_epoch(model, train_loader, criterion, optimizer, device)
@@ -294,6 +296,14 @@ def main():
         else:
             bad_epochs += 1
 
+        if best_val_acc >= args.target_acc:
+            reached_target_acc = True
+            print(
+                f"Reached target val_acc={args.target_acc:.4f} at epoch {epoch}, "
+                f"best_val_acc={best_val_acc:.4f}. Stop training and continue next stage."
+            )
+            break
+
         if bad_epochs >= args.patience:
             print(f"Early stopping at epoch {epoch}, best epoch = {best_epoch}")
             break
@@ -306,7 +316,7 @@ def main():
     print(f"Test loss={test_loss:.4f}, test acc={test_acc:.4f}")
 
     model_cpu = model.cpu().eval()
-    onnx_path = out_dir / "tiny_classifier_96.onnx"
+    onnx_path = out_dir / "tiny_classifier_fp32.onnx"
     export_onnx(model_cpu, onnx_path, args.img_size)
 
     cpu_ms = benchmark_torch_cpu(model_cpu, args.img_size)
@@ -315,6 +325,8 @@ def main():
     metrics = {
         "best_val_acc": best_val_acc,
         "best_epoch": best_epoch,
+        "target_acc": args.target_acc,
+        "reached_target_acc": reached_target_acc,
         "test_acc": test_acc,
         "test_loss": test_loss,
         "torch_cpu_1thread_ms": cpu_ms,

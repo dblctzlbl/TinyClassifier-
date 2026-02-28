@@ -15,11 +15,10 @@
 # along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 param(
-    [string]$OnnxPath = "artifacts/tiny_classifier_96.onnx",
-    [string]$OutParam = "artifacts/tiny_classifier_96.ncnn.param",
-    [string]$OutBin = "artifacts/tiny_classifier_96.ncnn.bin",
-    [string]$OutParamOpt = "artifacts/tiny_classifier_96.opt.param",
-    [string]$OutBinOpt = "artifacts/tiny_classifier_96.opt.bin"
+    [string]$OnnxPath = "artifacts/tiny_classifier_fp32.onnx",
+    [string]$OutParam = "artifacts/tiny_classifier_fp32.ncnn.param",
+    [string]$OutBin = "artifacts/tiny_classifier_fp32.ncnn.bin",
+    [int]$InputSize = 96
 )
 
 function Find-Tool($name) {
@@ -56,7 +55,7 @@ if ($onnx2ncnnPath) {
         exit $LASTEXITCODE
     }
 } elseif ($pnnxPath) {
-    & $pnnxPath $OnnxPath inputshape=[1,3,96,96] fp16=0
+    & $pnnxPath $OnnxPath inputshape=[1,3,$InputSize,$InputSize] fp16=0
     if ($LASTEXITCODE -ne 0) {
         Write-Error "pnnx conversion failed."
         exit $LASTEXITCODE
@@ -71,15 +70,22 @@ if ($onnx2ncnnPath) {
     exit 1
 }
 
-$ncnnoptPath = Find-Tool "ncnnoptimize.exe"
-if ($ncnnoptPath) {
-    try {
-        & $ncnnoptPath $OutParam $OutBin $OutParamOpt $OutBinOpt 0
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "Optimized model generated: $OutParamOpt, $OutBinOpt"
-        }
-    } catch {
-        Write-Host "ncnnoptimize execution failed, but base ncnn model is generated."
+$onnxBase = [System.IO.Path]::GetFileNameWithoutExtension($OnnxPath)
+$onnxDir = [System.IO.Path]::GetDirectoryName($OnnxPath)
+if ([string]::IsNullOrWhiteSpace($onnxDir)) {
+    $onnxDir = (Get-Location).Path
+}
+$tempFiles = @(
+    [System.IO.Path]::Combine($onnxDir, "$onnxBase.pnnx.param"),
+    [System.IO.Path]::Combine($onnxDir, "$onnxBase.pnnx.bin"),
+    [System.IO.Path]::Combine($onnxDir, "$onnxBase.pnnx.onnx"),
+    [System.IO.Path]::Combine($onnxDir, "$onnxBase.pnnxsim.onnx"),
+    [System.IO.Path]::Combine($onnxDir, "${onnxBase}_pnnx.py"),
+    [System.IO.Path]::Combine($onnxDir, "${onnxBase}_ncnn.py")
+)
+foreach ($temp in $tempFiles) {
+    if (Test-Path -LiteralPath $temp) {
+        Remove-Item -Force $temp
     }
 }
 

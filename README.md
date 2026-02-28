@@ -31,6 +31,7 @@ along with this project. If not, see <https://www.gnu.org/licenses/>.
 - `train_tiny_classifier.py`：训练 + 验证 + 测试 + 导出 ONNX + 生成 `metrics.json` 与 `labels.txt`
 - `run_all.ps1`：一键脚本（训练 + 导出 NCNN）
 - `evaluate_local_accuracy.py`：本地精度复核脚本（可选，不在一键流程中）
+- `evaluate_random_subset_accuracy.py`：随机抽样精度验证（导出后自动调用）
 - `convert_to_ncnn.ps1`：ONNX 转 NCNN
 
 默认输入目录：`dataset/`  
@@ -101,12 +102,15 @@ python train_tiny_classifier.py `
   --seed 42 `
   --width-mult 0.6 `
   --patience 8 `
+  --target-acc 0.95 `
   --out-dir artifacts
 ```
 
+说明：当验证集最佳准确率 `best_val_acc >= target-acc` 时，会提前停止训练并进入后续阶段。
+
 训练后会生成：
 - `artifacts/best_model.pt`
-- `artifacts/tiny_classifier_96.onnx`
+- `artifacts/tiny_classifier_fp32.onnx`
 - `artifacts/labels.txt`
 - `artifacts/metrics.json`
 
@@ -130,14 +134,10 @@ powershell -ExecutionPolicy Bypass -File .\run_all.ps1
 - `PythonExe`
 - `DataRoot`
 - `OutDir`
+- `TargetAcc`（验证准确率达到该阈值后提前停止训练）
 - 训练参数（`ImgSize`、`BatchSize`、`Epochs`、`Lr`、`WidthMult` 等）
 - `RunNcnnExport`（是否导出 NCNN）
-
-导出开启时还会生成：
-- `artifacts/tiny_classifier_96.ncnn.param`
-- `artifacts/tiny_classifier_96.ncnn.bin`
-- （若可优化）`artifacts/tiny_classifier_96.opt.param`
-- （若可优化）`artifacts/tiny_classifier_96.opt.bin`
+- `RandomEval`（导出后随机抽样验证配置）
 
 ---
 

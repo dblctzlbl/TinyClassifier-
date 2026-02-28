@@ -33,14 +33,17 @@ $DataRoot = "dataset"
 # Output directory
 $OutDir = "artifacts"
 
+# Stop training early when validation accuracy reaches this threshold
+$TargetAcc = 0.90
+
 # Train params
 $Train = @{
     ImgSize = 96
     BatchSize = 64
-    Epochs = 10
+    Epochs = 120
     Lr = 1e-3
     WeightDecay = 2e-4
-    NumWorkers = 4
+    NumWorkers = 0
     Seed = 42
     WidthMult = 0.6
     Patience = 8
@@ -48,6 +51,15 @@ $Train = @{
 
 # Whether to export NCNN (calls convert_to_ncnn.ps1)
 $RunNcnnExport = $true
+
+# Random subset validation after export
+$RandomEval = @{
+    Enabled = $true
+    SampleSize = 300
+    BatchSize = 128
+    NumWorkers = 0
+    Seed = 42
+}
 
 # ====================== End User Config (do not edit below) =================
 
@@ -71,16 +83,16 @@ function Resolve-PythonExe {
         return $Configured
     }
 
-    $cmd = Get-Command python -ErrorAction SilentlyContinue
-    if ($cmd) {
-        return $cmd.Source
-    }
-
     if ($env:CONDA_PREFIX) {
         $condaPython = Join-Path $env:CONDA_PREFIX "python.exe"
         if (Test-Path -LiteralPath $condaPython) {
             return $condaPython
         }
+    }
+
+    $cmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
     }
 
     throw 'Python executable not found. Please set $PythonExe in the user config section.'
@@ -97,6 +109,9 @@ if (-not (Test-Path -LiteralPath $DataRoot)) {
 if (-not (Test-Path -LiteralPath "./train_tiny_classifier.py")) {
     throw "Missing file: train_tiny_classifier.py"
 }
+if (-not (Test-Path -LiteralPath "./evaluate_random_subset_accuracy.py")) {
+    throw "Missing file: evaluate_random_subset_accuracy.py"
+}
 if ($RunNcnnExport -and -not (Test-Path -LiteralPath "./convert_to_ncnn.ps1")) {
     throw "Missing file: convert_to_ncnn.ps1"
 }
@@ -105,6 +120,26 @@ Invoke-Step -Name "Check Dependencies" -Action {
     & $PythonExe -c "import torch, torchvision, onnx, onnxsim; print('ok')"
     if ($LASTEXITCODE -ne 0) {
         throw "Python environment missing required packages. Install: torch torchvision onnx onnxsim"
+    }
+}
+
+Invoke-Step -Name "Cleanup Model Artifacts" -Action {
+    $modelFiles = @(
+        "tiny_classifier_96.onnx",
+        "tiny_classifier_fp32.onnx",
+        "tiny_classifier_fp32.pnnxsim.onnx",
+        "tiny_classifier_96.ncnn.param",
+        "tiny_classifier_96.ncnn.bin",
+        "tiny_classifier_96.opt.param",
+        "tiny_classifier_96.opt.bin",
+        "tiny_classifier_fp32.ncnn.param",
+        "tiny_classifier_fp32.ncnn.bin"
+    )
+    foreach ($name in $modelFiles) {
+        $path = Join-Path $OutDir $name
+        if (Test-Path -LiteralPath $path) {
+            Remove-Item -Force $path
+        }
     }
 }
 
@@ -121,6 +156,7 @@ Invoke-Step -Name "Train Model" -Action {
         "--seed", "$($Train.Seed)",
         "--width-mult", "$($Train.WidthMult)",
         "--patience", "$($Train.Patience)",
+        "--target-acc", "$TargetAcc",
         "--out-dir", $OutDir
     )
     & $PythonExe @argsTrain
@@ -132,19 +168,34 @@ if (-not (Test-Path -LiteralPath $CheckpointPath)) {
 }
 
 if ($RunNcnnExport) {
-    Invoke-Step -Name "Export NCNN" -Action {
-        $onnxPath = Join-Path $OutDir "tiny_classifier_96.onnx"
-        $ncnnParam = Join-Path $OutDir "tiny_classifier_96.ncnn.param"
-        $ncnnBin = Join-Path $OutDir "tiny_classifier_96.ncnn.bin"
-        $ncnnOptParam = Join-Path $OutDir "tiny_classifier_96.opt.param"
-        $ncnnOptBin = Join-Path $OutDir "tiny_classifier_96.opt.bin"
+    Invoke-Step -Name "Export NCNN (FP32)" -Action {
+        $onnxPath = Join-Path $OutDir "tiny_classifier_fp32.onnx"
+        $ncnnParam = Join-Path $OutDir "tiny_classifier_fp32.ncnn.param"
+        $ncnnBin = Join-Path $OutDir "tiny_classifier_fp32.ncnn.bin"
 
-        & "./convert_to_ncnn.ps1" `
+        $convertScript = Join-Path (Get-Location) "convert_to_ncnn.ps1"
+        & powershell -ExecutionPolicy Bypass -File $convertScript `
             -OnnxPath $onnxPath `
             -OutParam $ncnnParam `
             -OutBin $ncnnBin `
-            -OutParamOpt $ncnnOptParam `
-            -OutBinOpt $ncnnOptBin
+            -InputSize $($Train.ImgSize)
+    }
+}
+
+if ($RandomEval.Enabled) {
+    Invoke-Step -Name "Random Sample Validation" -Action {
+        $argsEval = @(
+            "./evaluate_random_subset_accuracy.py",
+            "--data-root", $DataRoot,
+            "--checkpoint", $CheckpointPath,
+            "--img-size", "$($Train.ImgSize)",
+            "--batch-size", "$($RandomEval.BatchSize)",
+            "--num-workers", "$($RandomEval.NumWorkers)",
+            "--seed", "$($RandomEval.Seed)",
+            "--sample-size", "$($RandomEval.SampleSize)",
+            "--out-json", (Join-Path $OutDir "random_sample_metrics.json")
+        )
+        & $PythonExe @argsEval
     }
 }
 
@@ -152,8 +203,11 @@ Write-Host "`nAll steps finished. Output dir: $OutDir" -ForegroundColor Green
 Write-Host ('- Model: {0}' -f (Join-Path $OutDir 'best_model.pt'))
 Write-Host ('- Label order: {0}' -f (Join-Path $OutDir 'labels.txt'))
 Write-Host ('- Metrics: {0}' -f (Join-Path $OutDir 'metrics.json'))
-Write-Host ('- ONNX: {0}' -f (Join-Path $OutDir 'tiny_classifier_96.onnx'))
+if ($RandomEval.Enabled) {
+    Write-Host ('- Random Eval: {0}' -f (Join-Path $OutDir 'random_sample_metrics.json'))
+}
+Write-Host ('- ONNX FP32: {0}' -f (Join-Path $OutDir 'tiny_classifier_fp32.onnx'))
 if ($RunNcnnExport) {
-    Write-Host ('- NCNN Param: {0}' -f (Join-Path $OutDir 'tiny_classifier_96.ncnn.param'))
-    Write-Host ('- NCNN Bin: {0}' -f (Join-Path $OutDir 'tiny_classifier_96.ncnn.bin'))
+    Write-Host ('- NCNN FP32 Param: {0}' -f (Join-Path $OutDir 'tiny_classifier_fp32.ncnn.param'))
+    Write-Host ('- NCNN FP32 Bin: {0}' -f (Join-Path $OutDir 'tiny_classifier_fp32.ncnn.bin'))
 }

@@ -1,0 +1,19 @@
+{
+  "best_val_acc": 0.9008620689655172,
+  "best_epoch": 34,
+  "target_acc": 0.9,
+  "reached_target_acc": true,
+  "test_acc": 0.8818565400843882,
+  "test_loss": 0.307284718009993,
+  "torch_cpu_1thread_ms": 0.8629987999997866,
+  "num_params": 4323,
+  "classes": [
+    "supplies",
+    "vehicle",
+    "weapon"
+  ],
+  "onnx_path": "artifacts\\tiny_classifier_fp32.onnx",
+  "img_size": 96,
+  "width_mult": 0.6,
+  "labels_path": "artifacts\\labels.txt"
+}
