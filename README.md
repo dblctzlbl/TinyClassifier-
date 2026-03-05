@@ -1,53 +1,10 @@
-<!--
-SPDX-License-Identifier: GPL-3.0-or-later
-Copyright (C) 2026 望着天空的眼睛 <a15234181830@163.com>
+# TinyClassifier
 
-This project is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
-the Free Software Foundation, either version 3 of the License, or
-(at your option) any later version.
-
-This project is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with this project. If not, see <https://www.gnu.org/licenses/>.
--->
-
-# TinyClassifier（训练 + 导出 NCNN）
-
-本工程当前默认流程是：
-
-1. 使用 ImageFolder 数据集训练分类模型
-2. 输出训练产物（模型、标签顺序、指标、ONNX）
-3. 导出 NCNN 模型（可在脚本开关关闭）
+轻量级图像分类模型训练框架，支持一键训练并导出 NCNN 模型，适用于嵌入式板卡部署。
 
 ---
 
-## 1. 项目脚本
-
-- `train_tiny_classifier.py`：训练 + 验证 + 测试 + 导出 ONNX + 生成 `metrics.json` 与 `labels.txt`
-- `run_all.ps1`：一键脚本（训练 + 导出 NCNN）
-- `evaluate_local_accuracy.py`：本地精度复核脚本（可选，不在一键流程中）
-- `evaluate_random_subset_accuracy.py`：随机抽样精度验证（导出后自动调用）
-- `convert_to_ncnn.ps1`：ONNX 转 NCNN
-
-默认输入目录：`dataset/`  
-默认输出目录：`artifacts/`
-
----
-
-## 2. 环境准备
-
-建议在你的 Conda 环境中执行：
-
-```powershell
-conda activate loong
-```
-
-安装依赖：
+## 1. 环境准备
 
 ```powershell
 python -m pip install --upgrade pip
@@ -56,9 +13,9 @@ python -m pip install -r requirements.txt
 
 ---
 
-## 3. 数据集格式
+## 2. 数据集格式
 
-数据集需为 ImageFolder 结构（类别名可自定义）：
+数据集需为 ImageFolder 结构：
 
 ```text
 dataset/
@@ -75,102 +32,64 @@ dataset/
 - 支持图片后缀：jpg / jpeg / png / bmp
 - 至少两个类别
 
-类别索引由 `ImageFolder` 按文件夹名字典序自动生成。  
-`labels.txt` 会按该顺序自动写出，并与模型输出索引一一对应。
-
 ---
 
-## 4. 训练命令
+## 3. 一键训练
 
-### 4.1 最短命令
-
-```powershell
-python train_tiny_classifier.py --data-root dataset
-```
-
-### 4.2 常用完整参数
+修改 `run_all.ps1` 顶部的配置项：
 
 ```powershell
-python train_tiny_classifier.py `
-  --data-root dataset `
-  --img-size 96 `
-  --batch-size 64 `
-  --epochs 35 `
-  --lr 1e-3 `
-  --weight-decay 2e-4 `
-  --num-workers 4 `
-  --seed 42 `
-  --width-mult 0.6 `
-  --patience 8 `
-  --target-acc 0.95 `
-  --out-dir artifacts
+# ========================= User Config (edit here) =========================
+$PythonExe = ""           # Python路径，留空则使用系统默认
+$DataRoot = "dataset"     # 数据集目录
+$OutDir = "artifacts"     # 输出目录
+$TargetAcc = 0.90         # 目标准确率，达到后提前停止
+
+$Train = @{
+    ImgSize = 96          # 输入图像尺寸
+    BatchSize = 64        # 批大小
+    Epochs = 120          # 最大训练轮数
+    Lr = 1e-3             # 学习率
+    WidthMult = 0.6       # 模型宽度系数
+}
+# ===========================================================================
 ```
 
-说明：当验证集最佳准确率 `best_val_acc >= target-acc` 时，会提前停止训练并进入后续阶段。
-
-训练后会生成：
-- `artifacts/best_model.pt`
-- `artifacts/tiny_classifier_fp32.onnx`
-- `artifacts/labels.txt`
-- `artifacts/metrics.json`
-
----
-
-## 5. 一键流程（训练 + 导出 NCNN）
-
-直接运行：
+运行脚本：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run_all.ps1
 ```
 
-或在当前 PowerShell 中：
-
-```powershell
-.\run_all.ps1
-```
-
-可在 `run_all.ps1` 顶部修改：
-- `PythonExe`
-- `DataRoot`
-- `OutDir`
-- `TargetAcc`（验证准确率达到该阈值后提前停止训练）
-- 训练参数（`ImgSize`、`BatchSize`、`Epochs`、`Lr`、`WidthMult` 等）
-- `RunNcnnExport`（是否导出 NCNN）
-- `RandomEval`（导出后随机抽样验证配置）
+训练完成后输出：
+- `artifacts/best_model.pt` - PyTorch 模型
+- `artifacts/tiny_classifier_fp32.onnx` - ONNX 模型
+- `artifacts/tiny_classifier_fp32.ncnn.param` - NCNN 参数文件
+- `artifacts/tiny_classifier_fp32.ncnn.bin` - NCNN 权重文件
+- `artifacts/labels.txt` - 类别标签顺序
 
 ---
 
-## 6. 单独导出 NCNN
+## 4. 板卡推理
 
-如果你只想在已有 ONNX 基础上重新导出：
+`Board_Card_Reasoning/` 目录下的推理代码适用于所有支持 NCNN 的嵌入式板卡，包括但不限于：
+- 龙芯 2K0300 久久派
+- 树莓派
+- Jetson 系列
+- 其他 ARM/x86 嵌入式平台
 
-```powershell
-powershell -ExecutionPolicy Bypass -File .\convert_to_ncnn.ps1
-```
-
----
-
-## 7. 可选：本地精度复核
-
-如果你想在训练后再做一次独立精度评估：
-
-```powershell
-python evaluate_local_accuracy.py `
-  --data-root dataset `
-  --checkpoint artifacts/best_model.pt `
-  --img-size 96 `
-  --batch-size 128 `
-  --num-workers 2 `
-  --seed 42
-```
+使用方法：
+1. 将 `tiny_classifier_fp32.ncnn.param` 和 `tiny_classifier_fp32.ncnn.bin` 复制到板卡
+2. 修改 `main.cpp` 中的 `labels` 为你的类别名称
+3. 编译并运行
 
 ---
 
-## 8. 常见问题
+## 5. 常见问题
 
-- `No module named ...`：先执行 `python -m pip install -r requirements.txt`
-- `Neither onnx2ncnn.exe nor pnnx.exe was found.`：把 `onnx2ncnn.exe` 或 `pnnx.exe` 放到 PATH 或项目目录
-- `data-root not found`：确认 `--data-root` 路径存在且为目录
-- `data-root must contain at least 2 class folders`：至少准备两个类别文件夹
-- 精度不理想：优先扩充数据量、增加 `epochs`、适当增大 `width-mult`
+| 问题 | 解决方案 |
+|------|----------|
+| `No module named ...` | 执行 `pip install -r requirements.txt` |
+| `Neither onnx2ncnn.exe nor pnnx.exe was found.` | 将 `onnx2ncnn.exe` 或 `pnnx.exe` 放入 PATH 或项目目录 |
+| 精度不理想 | 扩充数据量、增加 `Epochs`、适当增大 `WidthMult` |
+| 板卡推理精度差 | 确认输入图像已从 BGR 转换为 RGB（代码已内置转换）|
