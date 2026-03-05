@@ -21,6 +21,7 @@ param(
     [int]$InputSize = 96
 )
 
+
 function Find-Tool($name) {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue
     if ($cmd) {
